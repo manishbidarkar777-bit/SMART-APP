@@ -1,81 +1,84 @@
 import os
-# Force installation of heavy libraries on first run
-os.system('pip install gtts easyocr streamlit-webrtc av')
-
+os.system('pip install gtts')
+import os
+os.system('pip install easyocr')
 import streamlit as st
 import easyocr
 import torch
-import av
-import numpy as np
 from gtts import gTTS
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+from PIL import Image
+import numpy as np
 import base64
 
 # =========================
 # ⚙️ INITIALIZE OCR
 # =========================
 @st.cache_resource
-def load_ocr():
-    # English only for speed; uses GPU if your server has one
+def load_ocr_reader():
+    # Automatically detects if GPU is available
     return easyocr.Reader(['en'], gpu=torch.cuda.is_available())
 
-reader = load_ocr()
+reader = load_ocr_reader()
 
 # =========================
-# 🔊 AUTO-SPEECH ENGINE
+# 🔊 TEXT TO SPEECH (Auto-Triggered)
 # =========================
-def speak(text):
+def text_to_speech(text):
     if text.strip():
-        tts = gTTS(text=text, lang='en')
-        tts.save("speech.mp3")
-        with open("speech.mp3", "rb") as f:
-            data = f.read()
-            b64 = base64.b64encode(data).decode()
-            # HTML5 Autoplay
-            md = f'<audio autoplay="true" src="data:audio/mp3;base64,{b64}">'
-            st.markdown(md, unsafe_allow_html=True)
-
-# =========================
-# 📸 VIDEO PROCESSING
-# =========================
-class OCRProcessor(VideoProcessorBase):
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        # Store the live frame in session state for the OCR to grab
-        st.session_state["live_frame"] = img
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
+        try:
+            tts = gTTS(text=text, lang='en')
+            # Using a temporary name to avoid file-in-use errors
+            audio_file = "temp_speech.mp3"
+            tts.save(audio_file)
+            
+            with open(audio_file, "rb") as f:
+                data = f.read()
+                b64 = base64.b64encode(data).decode()
+                # The 'autoplay' attribute ensures it reads immediately
+                md = f'<audio autoplay="true" src="data:audio/mp3;base64,{b64}">'
+                st.markdown(md, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"TTS Error: {e}")
 
 # =========================
 # 🚀 STREAMLIT UI
 # =========================
-st.set_page_config(page_title="Mobile Book Reader", layout="centered")
-st.title("📱 Mobile Book Reader")
-st.write("Align the book text in the video below.")
-s
-# 1. Start Video Stream (Uses Back Camera)
-webrtc_ctx = webrtc_streamer(
-    key="mobile-ocr",
-    video_processor_factory=OCRProcessor,*
-    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-    media_stream_constraints={
-        "video": {"facingMode": "environment"}, # FORCES BACK CAMERA
-        "audio": False
-    },
-)
+st.set_page_config(page_title="SMART-APP", page_icon="📖")
+st.title("SMART-APP")
+st.markdown("Click the camera button below. As soon as you capture, I will read it for you.")
 
-# 2. Trigger Recognition
-if webrtc_ctx.state.playing:
-    # Big button for easy thumb-pressing on mobile
-    if st.button("📖 READ THIS PAGE", use_container_width=True):
-        if "live_frame" in st.session_state:
-            with st.spinner("🧠 Analyzing Book..."):
-                img = st.session_state["live_frame"]
-                # Run the pretrained model
-                results = reader.readtext(img, detail=0)
-                full_text = " ".join(results)
-                
-                if full_text.strip():
-                    st.success(f"Detected: {full_text}")
-                    speak(full_text)
-                else:
-                    st.warning("No text detected. Get closer!")**
+# 1. Camera Input (Shutter button is required by browser security)
+img_file = st.camera_input("Capture Text")
+
+if img_file:
+    # Convert file to format EasyOCR understands
+    image = Image.open(img_file)
+    img_np = np.array(image)
+
+    with st.spinner("🔍 Reading text..."):
+        # 2. Run Pretrained EasyOCR
+        results = reader.readtext(img_np, detail=0)
+        full_text = " ".join(results)
+
+    # 3. Display Results
+    if full_text.strip():
+        st.subheader("📝 Extracted Text:")
+        st.info(full_text)
+        
+        # 4. 🔥 AUTO-READ (No button required)
+        text_to_speech(full_text)
+    else:
+        st.warning("⚠️ Could not see any text. Please hold the book steady and try again.")
+
+# Custom CSS for high readability
+st.markdown("""
+    <style>
+    .stInfo {
+        font-size: 22px;
+        font-family: 'Georgia', serif;
+        background-color: #f0f2f6;
+        border-radius: 10px;
+        padding: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
