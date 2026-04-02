@@ -1,6 +1,6 @@
 easyocr
-streamlit-webrtc
-av
 gTTS
 torch
 torchvision
+Pillow
+numpy
